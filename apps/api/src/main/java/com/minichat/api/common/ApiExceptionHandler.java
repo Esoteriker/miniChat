@@ -28,6 +28,11 @@ public class ApiExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, "unauthorized", ex.getMessage());
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<Map<String, Object>> handleTooManyRequests(TooManyRequestsException ex) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, "too_many_requests", ex.getMessage());
+    }
+
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class, IllegalArgumentException.class})
     public ResponseEntity<Map<String, Object>> handleBadRequest(Exception ex) {
         return build(HttpStatus.BAD_REQUEST, "bad_request", ex.getMessage());

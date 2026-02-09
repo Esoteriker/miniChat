@@ -26,5 +26,12 @@ public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
         Pageable pageable
     );
 
+    @Query("""
+        SELECT m FROM MessageEntity m
+        WHERE m.chatId = :chatId
+        ORDER BY m.createdAt ASC, m.id ASC
+        """)
+    List<MessageEntity> findHistoryByChatId(@Param("chatId") UUID chatId);
+
     Optional<MessageEntity> findByIdAndChatId(UUID id, UUID chatId);
 }

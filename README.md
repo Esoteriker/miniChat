@@ -3,22 +3,19 @@
 Multi-service "ChatGPT-like" system.
 
 ## Milestone Status
-Current repository is at **Milestone 2**:
-- Milestone 1: monorepo + infra + multi-service scaffolds
-- Milestone 2: Spring Boot implemented with
-  - JWT auth: `register/login/refresh/me`
-  - chat CRUD: `create/list/rename/delete`
-  - messages API: `list(cursor,limit)/create`
-  - Flyway migration with core tables (`users/chats/messages/generations/usage_events/daily_usage/audit_logs`)
+Current repository is at **Milestone 3**:
+- M1: monorepo + infra + service scaffolds
+- M2: Spring auth/chats/messages + PostgreSQL migration
+- M3: generation lifecycle + SSE streaming + cancel + Spring->FastAPI orchestration
 
 ## Structure
 
 ```text
 apps/
   web/         # Next.js scaffold
-  api/         # Spring Boot (implemented in M2)
-  inference/   # FastAPI scaffold
-  worker/      # Go scaffold
+  api/         # Spring Boot control plane
+  inference/   # FastAPI inference plane
+  worker/      # Go scaffold (M4 will consume events)
 infra/
   docker-compose.yml
 shared/
@@ -53,39 +50,60 @@ cp /Users/xuhaidong/Desktop/project/miniChat/.env.example /Users/xuhaidong/Deskt
 docker compose -f /Users/xuhaidong/Desktop/project/miniChat/infra/docker-compose.yml --env-file /Users/xuhaidong/Desktop/project/miniChat/.env up -d
 ```
 
-3. Start API:
+3. Start inference:
+
+```bash
+cd /Users/xuhaidong/Desktop/project/miniChat/apps/inference
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+4. Start API:
 
 ```bash
 cd /Users/xuhaidong/Desktop/project/miniChat/apps/api
-SPRING_PROFILES_ACTIVE=local gradle bootRun
+gradle bootRun
 ```
 
-4. Health check:
-
-```bash
-curl http://localhost:8080/healthz
-curl http://localhost:8080/actuator/health
-```
-
-## Implemented API (Milestone 2)
+## Implemented API
 
 ### Auth
-- `POST /api/auth/register` `{ "email": "...", "password": "..." }`
-- `POST /api/auth/login` `{ "email": "...", "password": "..." }`
-- `POST /api/auth/refresh` (Bearer token)
-- `GET /api/auth/me` (Bearer token)
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `GET /api/auth/me`
 
 ### Chats
-- `POST /api/chats` `{ "title": "optional" }`
+- `POST /api/chats`
 - `GET /api/chats`
-- `PATCH /api/chats/{id}` `{ "title": "new title" }`
+- `PATCH /api/chats/{id}`
 - `DELETE /api/chats/{id}`
 
 ### Messages
 - `GET /api/chats/{id}/messages?cursor=&limit=`
-- `POST /api/chats/{id}/messages` `{ "content": "..." }`
+- `POST /api/chats/{id}/messages`
+
+### Generations
+- `POST /api/chats/{id}/generations`
+- `GET /api/generations/{id}/stream` (SSE)
+- `POST /api/generations/{id}/cancel`
+
+Generation create body:
+
+```json
+{
+  "userMessage": "hello",
+  "model": "gpt-4o-mini",
+  "systemPrompt": "You are helpful",
+  "temperature": 0.7,
+  "maxTokens": 512,
+  "requestId": "optional-idempotency-key"
+}
+```
 
 ## Notes
-- `cursor` is message UUID for keyset pagination.
-- `limit` default `20`, max `100`.
-- Milestone 3 will add generation state machine, SSE streaming, cancel, and inference integration.
+- Generation state machine: `queued -> streaming -> succeeded|failed|canceled`
+- SSE event protocol: `delta`, `usage`, `error`, `done`
+- Redis enforces simple QPS + single in-flight generation lock per user
+- RabbitMQ events are published for `usage_event` and `audit_event`

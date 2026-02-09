@@ -1,7 +1,9 @@
 package com.minichat.api.chat;
 
 import com.minichat.api.common.NotFoundException;
+import com.minichat.api.event.DomainEventPublisher;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,9 +14,11 @@ public class ChatService {
     private static final String DEFAULT_CHAT_TITLE = "New Chat";
 
     private final ChatRepository chatRepository;
+    private final DomainEventPublisher eventPublisher;
 
-    public ChatService(ChatRepository chatRepository) {
+    public ChatService(ChatRepository chatRepository, DomainEventPublisher eventPublisher) {
         this.chatRepository = chatRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -23,6 +27,12 @@ public class ChatService {
         chat.setUserId(userId);
         chat.setTitle(normalizeTitle(title));
         ChatEntity saved = chatRepository.save(chat);
+
+        eventPublisher.publishAudit(userId, "create_chat", Map.of(
+            "chatId", saved.getId().toString(),
+            "title", saved.getTitle()
+        ));
+
         return toResponse(saved);
     }
 

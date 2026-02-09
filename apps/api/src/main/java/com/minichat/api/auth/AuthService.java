@@ -2,7 +2,9 @@ package com.minichat.api.auth;
 
 import com.minichat.api.common.ConflictException;
 import com.minichat.api.common.UnauthorizedException;
+import com.minichat.api.event.DomainEventPublisher;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,13 +16,16 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final DomainEventPublisher eventPublisher;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtTokenProvider tokenProvider) {
+                       JwtTokenProvider tokenProvider,
+                       DomainEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -35,6 +40,7 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(rawPassword));
         UserEntity saved = userRepository.save(user);
 
+        eventPublisher.publishAudit(saved.getId(), "register", Map.of("email", saved.getEmail()));
         return tokenProvider.generateAccessToken(saved.getId(), saved.getEmail());
     }
 
@@ -48,6 +54,7 @@ public class AuthService {
             throw new UnauthorizedException("Invalid credentials");
         }
 
+        eventPublisher.publishAudit(user.getId(), "login", Map.of("email", user.getEmail()));
         return tokenProvider.generateAccessToken(user.getId(), user.getEmail());
     }
 
