@@ -1,0 +1,22 @@
+openapi: 3.0.3
+info:
+  title: MiniChat Internal Inference API
+  version: 0.1.0
+paths:
+  /internal/generate:
+    post:
+      summary: Stream generation events
+      description: Streaming endpoint from inference service consumed by Spring API.
+      requestBody:
+        required: true
+      responses:
+        '200':
+          description: text/event-stream with protocol events
+  /internal/cancel:
+    post:
+      summary: Cancel in-flight generation
+      requestBody:
+        required: true
+      responses:
+        '200':
+          description: Cancellation accepted

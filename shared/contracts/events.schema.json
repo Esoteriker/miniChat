@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MiniChat Events",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "usage_event",
+      "type": "object",
+      "properties": {
+        "type": { "const": "usage_event" },
+        "userId": { "type": "string" },
+        "generationId": { "type": "string" },
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "model": { "type": "string" }
+      },
+      "required": ["type", "userId", "generationId", "inputTokens", "outputTokens", "model"]
+    },
+    {
+      "title": "audit_event",
+      "type": "object",
+      "properties": {
+        "type": { "const": "audit_event" },
+        "userId": { "type": ["string", "null"] },
+        "action": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["type", "action", "metadata"]
+    }
+  ]
+}

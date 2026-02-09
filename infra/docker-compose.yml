@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: minichat-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-minichat}
+      POSTGRES_USER: ${POSTGRES_USER:-minichat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-minichat}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-minichat} -d ${POSTGRES_DB:-minichat}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - minichat_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: minichat-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - minichat_net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: minichat-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 8
+    networks:
+      - minichat_net
+
+networks:
+  minichat_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
