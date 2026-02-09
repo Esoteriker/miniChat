@@ -53,6 +53,77 @@ services:
     networks:
       - minichat_net
 
+  inference:
+    build:
+      context: ../apps/inference
+    container_name: minichat-inference
+    environment:
+      INFERENCE_PORT: 8000
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "${INFERENCE_PORT:-8000}:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_started
+    networks:
+      - minichat_net
+
+  api:
+    build:
+      context: ../apps/api
+    container_name: minichat-api
+    environment:
+      API_PORT: 8080
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      POSTGRES_USER: ${POSTGRES_USER:-minichat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-minichat}
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-minichat}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      INFERENCE_BASE_URL: http://inference:8000
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_prod_change_me_in_prod_change_me}
+      JWT_EXPIRES_SECONDS: ${JWT_EXPIRES_SECONDS:-3600}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-4o-mini}
+      GEN_QPS_LIMIT: ${GEN_QPS_LIMIT:-2}
+      GEN_INFLIGHT_TTL_SECONDS: ${GEN_INFLIGHT_TTL_SECONDS:-1800}
+      GEN_DEFAULT_TEMPERATURE: ${GEN_DEFAULT_TEMPERATURE:-0.7}
+      GEN_DEFAULT_MAX_TOKENS: ${GEN_DEFAULT_MAX_TOKENS:-512}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      inference:
+        condition: service_started
+    networks:
+      - minichat_net
+
+  worker:
+    build:
+      context: ../apps/worker
+    container_name: minichat-worker
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-minichat}:${POSTGRES_PASSWORD:-minichat}@postgres:5432/${POSTGRES_DB:-minichat}?sslmode=disable
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      WORKER_LOG_LEVEL: ${WORKER_LOG_LEVEL:-info}
+      WORKER_USAGE_QUEUE: ${WORKER_USAGE_QUEUE:-usage_event}
+      WORKER_AUDIT_QUEUE: ${WORKER_AUDIT_QUEUE:-audit_event}
+      WORKER_PREFETCH: ${WORKER_PREFETCH:-20}
+      WORKER_RETRY_SECONDS: ${WORKER_RETRY_SECONDS:-5}
+      WORKER_HANDLE_TIMEOUT_SECONDS: ${WORKER_HANDLE_TIMEOUT_SECONDS:-10}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - minichat_net
+
 networks:
   minichat_net:
     driver: bridge

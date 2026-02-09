@@ -3,70 +3,44 @@
 Multi-service "ChatGPT-like" system.
 
 ## Milestone Status
-Current repository is at **Milestone 3**:
-- M1: monorepo + infra + service scaffolds
-- M2: Spring auth/chats/messages + PostgreSQL migration
-- M3: generation lifecycle + SSE streaming + cancel + Spring->FastAPI orchestration
+Current repository is at **Milestone 5**:
+- M1: monorepo + infra + scaffolds
+- M2: Spring auth/chats/messages + Flyway schema
+- M3: generation lifecycle + SSE streaming + cancel
+- M4: Go worker consumes `usage_event` / `audit_event` and writes aggregates
+- M5: web app connected end-to-end + after-commit event publishing + CORS
 
-## Structure
-
-```text
-apps/
-  web/         # Next.js scaffold
-  api/         # Spring Boot control plane
-  inference/   # FastAPI inference plane
-  worker/      # Go scaffold (M4 will consume events)
-infra/
-  docker-compose.yml
-shared/
-  contracts/
-docs/
-  ARCHITECTURE.md
-PLANS.md
-AGENTS.md
-.env.example
-```
-
-## Ports
-- Web: `3000`
-- API: `8080`
-- Inference: `8000`
-- PostgreSQL: `5432`
-- Redis: `6379`
-- RabbitMQ: `5672`
-- RabbitMQ management: `15672`
+## Services
+- `apps/web`: Next.js app (`/login`, `/chat`) with JWT auth, chats, messages, streaming generation, stop
+- `apps/api`: Spring Boot control plane
+- `apps/inference`: FastAPI inference plane
+- `apps/worker`: Go queue consumer
+- Infra: PostgreSQL + Redis + RabbitMQ
 
 ## Quick Start
 
-1. Prepare env:
-
 ```bash
 cp /Users/xuhaidong/Desktop/project/miniChat/.env.example /Users/xuhaidong/Desktop/project/miniChat/.env
+
+# Use a non-conflicting host port for PostgreSQL if 5432 is already used.
+POSTGRES_PORT=55432 docker compose -f /Users/xuhaidong/Desktop/project/miniChat/infra/docker-compose.yml --env-file /Users/xuhaidong/Desktop/project/miniChat/.env up -d --build
 ```
 
-2. Start infra:
+Start web:
 
 ```bash
-docker compose -f /Users/xuhaidong/Desktop/project/miniChat/infra/docker-compose.yml --env-file /Users/xuhaidong/Desktop/project/miniChat/.env up -d
+cd /Users/xuhaidong/Desktop/project/miniChat/apps/web
+npm install
+npm run dev
 ```
 
-3. Start inference:
+Open:
+- Web: `http://localhost:3000`
+- API: `http://localhost:8080`
+- Inference: `http://localhost:8000`
+- RabbitMQ UI: `http://localhost:15672`
 
-```bash
-cd /Users/xuhaidong/Desktop/project/miniChat/apps/inference
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-4. Start API:
-
-```bash
-cd /Users/xuhaidong/Desktop/project/miniChat/apps/api
-gradle bootRun
-```
-
-## Implemented API
+## API Surface
 
 ### Auth
 - `POST /api/auth/register`
@@ -89,21 +63,24 @@ gradle bootRun
 - `GET /api/generations/{id}/stream` (SSE)
 - `POST /api/generations/{id}/cancel`
 
-Generation create body:
-
-```json
-{
-  "userMessage": "hello",
-  "model": "gpt-4o-mini",
-  "systemPrompt": "You are helpful",
-  "temperature": 0.7,
-  "maxTokens": 512,
-  "requestId": "optional-idempotency-key"
-}
-```
-
 ## Notes
 - Generation state machine: `queued -> streaming -> succeeded|failed|canceled`
 - SSE event protocol: `delta`, `usage`, `error`, `done`
-- Redis enforces simple QPS + single in-flight generation lock per user
-- RabbitMQ events are published for `usage_event` and `audit_event`
+- RabbitMQ events are now published after DB transaction commit to avoid FK race in worker
+- CORS is enabled for `WEB_ORIGIN` (default `http://localhost:3000`)
+
+## Useful Verification
+
+```bash
+# API compile
+docker run --rm -v /Users/xuhaidong/Desktop/project/miniChat/apps/api:/workspace -w /workspace gradle:8.10.2-jdk17 gradle compileJava --no-daemon
+
+# Inference syntax
+python3 -m py_compile /Users/xuhaidong/Desktop/project/miniChat/apps/inference/app/main.py /Users/xuhaidong/Desktop/project/miniChat/apps/inference/app/api/internal.py
+
+# Worker compile
+docker run --rm -v /Users/xuhaidong/Desktop/project/miniChat/apps/worker:/workspace -w /workspace golang:1.22-alpine go build ./...
+
+# Web build
+cd /Users/xuhaidong/Desktop/project/miniChat/apps/web && npm run build
+```

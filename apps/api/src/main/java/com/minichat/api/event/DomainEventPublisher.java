@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Component
 public class DomainEventPublisher {
@@ -29,7 +31,7 @@ public class DomainEventPublisher {
             "outputTokens", outputTokens,
             "model", model
         );
-        safePublish(RabbitConfig.USAGE_EVENT_QUEUE, payload);
+        publishAfterCommit(RabbitConfig.USAGE_EVENT_QUEUE, payload);
     }
 
     public void publishAudit(UUID userId, String action, Map<String, Object> metadata) {
@@ -38,7 +40,21 @@ public class DomainEventPublisher {
         payload.put("userId", userId == null ? null : userId.toString());
         payload.put("action", action);
         payload.put("metadata", metadata);
-        safePublish(RabbitConfig.AUDIT_EVENT_QUEUE, payload);
+        publishAfterCommit(RabbitConfig.AUDIT_EVENT_QUEUE, payload);
+    }
+
+    private void publishAfterCommit(String queue, Map<String, Object> payload) {
+        Runnable task = () -> safePublish(queue, payload);
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    task.run();
+                }
+            });
+            return;
+        }
+        task.run();
     }
 
     private void safePublish(String queue, Map<String, Object> payload) {

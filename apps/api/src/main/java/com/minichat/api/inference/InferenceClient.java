@@ -33,6 +33,7 @@ public class InferenceClient {
         this.objectMapper = objectMapper;
         this.baseUrl = baseUrl;
         this.httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofMillis(connectTimeoutMs))
             .build();
     }

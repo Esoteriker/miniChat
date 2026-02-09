@@ -3,7 +3,7 @@ WORKDIR /workspace
 COPY . .
 RUN gradle clean bootJar --no-daemon
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /workspace/build/libs/*.jar /app/app.jar
 EXPOSE 8080

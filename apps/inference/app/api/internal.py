@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -19,16 +19,16 @@ class Message(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    generationId: str
-    model: str = Field(default="gpt-4o-mini")
-    systemPrompt: str | None = None
+    generation_id: str
+    model: str = "gpt-4o-mini"
+    system_prompt: str | None = None
     temperature: float = 0.7
-    maxTokens: int = 512
+    max_tokens: int = 512
     messages: list[Message]
 
 
 class CancelRequest(BaseModel):
-    generationId: str
+    generation_id: str
 
 
 def _estimate_tokens(text: str) -> int:
@@ -64,13 +64,73 @@ async def _unregister(generation_id: str) -> None:
         _cancel_registry.pop(generation_id, None)
 
 
+def _parse_messages(raw_messages: Any) -> list[Message]:
+    if not isinstance(raw_messages, list):
+        return []
+    messages: list[Message] = []
+    for item in raw_messages:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip()
+        content = str(item.get("content", ""))
+        if role and content:
+            messages.append(Message(role=role, content=content))
+    return messages
+
+
+def _parse_generate_request(payload: dict[str, Any]) -> GenerateRequest:
+    generation_id = str(payload.get("generationId") or payload.get("generation_id") or "").strip()
+    model = str(payload.get("model") or "gpt-4o-mini").strip() or "gpt-4o-mini"
+    system_prompt = payload.get("systemPrompt")
+    if system_prompt is None:
+        system_prompt = payload.get("system_prompt")
+    if system_prompt is not None:
+        system_prompt = str(system_prompt)
+
+    temperature_raw = payload.get("temperature", 0.7)
+    try:
+        temperature = float(temperature_raw)
+    except (TypeError, ValueError):
+        temperature = 0.7
+
+    max_tokens_raw = payload.get("maxTokens")
+    if max_tokens_raw is None:
+        max_tokens_raw = payload.get("max_tokens", 512)
+    try:
+        max_tokens = int(max_tokens_raw)
+    except (TypeError, ValueError):
+        max_tokens = 512
+
+    messages = _parse_messages(payload.get("messages", []))
+
+    if not generation_id:
+        raise ValueError("generationId is required")
+
+    return GenerateRequest(
+        generation_id=generation_id,
+        model=model,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        messages=messages,
+    )
+
+
+def _parse_cancel_request(payload: dict[str, Any]) -> CancelRequest:
+    generation_id = str(payload.get("generationId") or payload.get("generation_id") or "").strip()
+    if not generation_id:
+        raise ValueError("generationId is required")
+    return CancelRequest(generation_id=generation_id)
+
+
 @router.post("/generate")
-async def generate(payload: GenerateRequest) -> StreamingResponse:
-    cancel_event = await _register(payload.generationId)
+async def generate(payload: dict[str, Any]) -> StreamingResponse:
+    req = _parse_generate_request(payload)
+    cancel_event = await _register(req.generation_id)
 
     async def event_stream() -> AsyncIterator[str]:
         try:
-            answer = _build_answer(payload.messages)
+            answer = _build_answer(req.messages)
             produced = ""
 
             for chunk in _chunks(answer):
@@ -83,7 +143,7 @@ async def generate(payload: GenerateRequest) -> StreamingResponse:
                 yield f"data: {json.dumps({'type': 'delta', 'delta': chunk})}\n\n"
                 await asyncio.sleep(0.04)
 
-            input_text = "\n".join([msg.content for msg in payload.messages])
+            input_text = "\n".join([msg.content for msg in req.messages])
             usage = {
                 "type": "usage",
                 "inputTokens": _estimate_tokens(input_text),
@@ -95,15 +155,16 @@ async def generate(payload: GenerateRequest) -> StreamingResponse:
             yield f"data: {json.dumps({'type': 'error', 'code': 'inference_error', 'message': str(ex)})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         finally:
-            await _unregister(payload.generationId)
+            await _unregister(req.generation_id)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.post("/cancel")
-async def cancel(payload: CancelRequest) -> dict[str, Any]:
+async def cancel(payload: dict[str, Any]) -> dict[str, Any]:
+    req = _parse_cancel_request(payload)
     async with _registry_lock:
-        event = _cancel_registry.get(payload.generationId)
+        event = _cancel_registry.get(req.generation_id)
         if event is None:
             return {"status": "accepted", "found": False}
         event.set()
